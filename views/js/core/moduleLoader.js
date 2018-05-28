@@ -28,8 +28,9 @@
  */
 define([
     'lodash',
-    'core/promise'
-], function (_, Promise) {
+    'core/promise',
+    'util/url'
+], function (_, Promise, urlUtil) {
     'use strict';
 
     /**
@@ -71,6 +72,23 @@ define([
          * Bundles to require
          */
         var bundles = [];
+
+        var loadedBundles = [];
+
+        var getMainModule = function getMainModule(){
+            var amdLoader  = document.getElementById('amd-loader');
+            var mainModule = amdLoader && amdLoader.src;
+            var parsed;
+
+            if(mainModule) {
+                parsed = urlUtil.parse(mainModule);
+                return parsed.path.replace('views/js/', '');
+            }
+
+            return false;
+        };
+
+        var mainModule = getMainModule();
 
         /**
          * The module loader
@@ -116,7 +134,9 @@ define([
                 }
 
                 if (def.bundle && !_.contains(bundles, def.bundle)) {
-                    bundles.push(def.bundle);
+                    if(!mainModule || mainModule.indexOf(def.bundle) === -1){
+                        bundles.push(def.bundle);
+                    }
                 }
                 return this;
             },
@@ -163,15 +183,23 @@ define([
                 //compute the providers dependencies
                 var dependencies = _(modules).values().flatten().uniq().difference(excludes).value();
 
+                console.log('Bundles', bundles);
+                console.log('LoadedBundles', loadedBundles);
+                console.log('mainModule', getMainModule());
+
+
                 /**
                  * Loads AMD modules and wrap then into a Promise
                  * @param {String[]} amdModules - the list of modules to require
                  * @returns {Promise}
                  */
-                var loadModules = function loadModules(amdModules) {
+                var loadModules = function loadModules(amdModules, isBundle) {
                     if (_.isArray(amdModules) && amdModules.length) {
                         return new Promise(function (resolve, reject) {
                             require(amdModules, function () {
+                                if(isBundle){
+                                    loadedBundles = loadedBundles.concat(amdModules);
+                                }
                                 //resolve with an array of loaded modules
                                 resolve([].slice.call(arguments));
                             }, reject);
@@ -183,7 +211,7 @@ define([
                 // 1. load bundles
                 // 2. load dependencies
                 // 3. add them to the modules list
-                return loadModules(loadBundles ? bundles : [])
+                return loadModules(loadBundles ? bundles : [], true)
                     .then(function () {
                         return loadModules(dependencies);
                     })
